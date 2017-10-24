@@ -21,9 +21,11 @@ defmodule TelnetChatroom do
     {:ok, client} = :gen_tcp.accept(socket)
     {ip_string, port} = get_ip_port(client)
     Logger.info "Connected to #{ip_string}:#{port}"
-    ClientRegistry.put(client)
     {:ok, pid} = Task.Supervisor.start_child(TelnetChatroom.TaskSupervisor, 
-        fn -> serve(client) end)
+        fn -> 
+          register_client(client)
+          serve(client) 
+        end)
     :ok = :gen_tcp.controlling_process(client, pid)
     loop_acceptor(socket)
   end
@@ -34,10 +36,17 @@ defmodule TelnetChatroom do
     {ip_string, port}    
   end
 
+  defp register_client(client) do
+    :gen_tcp.send(client, "Register a name: ")
+    name = read_line(client) |> String.trim("\r\n")
+    ClientRegistry.put(client, name)
+  end
+
   defp serve(socket) do
+    name = ClientRegistry.get_name(socket)
     socket
     |> read_line()
-    |> write_line()
+    |> broadcast(name)
 
     serve(socket)
   end
@@ -48,8 +57,8 @@ defmodule TelnetChatroom do
     end
   end
 
-  defp write_line(line) do
+  defp broadcast(line, name) do
     ClientRegistry.get_clients
-    |> Enum.each(fn socket -> :gen_tcp.send(socket, line) end)
+    |> Enum.each(fn socket -> :gen_tcp.send(socket, "#{name}: #{line}") end)
   end
 end
